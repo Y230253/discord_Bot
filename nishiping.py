@@ -162,7 +162,7 @@ async def on_message(message):
     if message.author == client.user:
         return
 
-    # ヘルプコマンド（新機能）
+    # ヘルプコマンド
     if message.content.startswith('!help'):
         help_text = (
             "# 🎮 **タイピングゲームボット - ヘルプ**\n\n"
