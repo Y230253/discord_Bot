@@ -1,8 +1,3 @@
-"""
-Discord タイピングゲームボット (Nishiping)
-====================================
-複数プレイヤーで遊べるタイピングゲーム Discord bot
-"""
 import discord
 import sqlite3
 import random
@@ -147,13 +142,6 @@ async def send_in_chunks(channel, text, chunk_size=2000):
 async def on_ready():
     """Botが起動したときのイベント"""
     print(f'ログインしました: {client.user} (v{BOT_VERSION})')
-    # 起動時のステータス設定
-    await client.change_presence(
-        activity=discord.Activity(
-            type=discord.ActivityType.playing, 
-            name="タイピングゲーム | !help"
-        )
-    )
 
 @client.event
 async def on_message(message):
