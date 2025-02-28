@@ -119,6 +119,13 @@ async def timeout_check():
         log_game_event('timeout', {'remaining_questions': game.questions_remaining})
         await client.get_channel(game.channel_id).send('⏰ タイムアウトしました。ゲームを終了します。')
 
+async def reset_timeout_timer():
+    """タイムアウトタイマーをリセット"""
+    if game.timeout_task:
+        game.timeout_task.cancel()
+    game.timeout_task = asyncio.create_task(timeout_check())
+    log_game_event('timer_reset', {'timeout_seconds': GAME_TIMEOUT})
+
 async def send_in_chunks(channel, text, chunk_size=2000):
     """長いメッセージを分割して送信"""
     lines = text.split('\n')
@@ -237,9 +244,7 @@ async def handle_difficulty_selection(message):
         game.start_time = time.time()
         
         # タイムアウトタスクを設定
-        if game.timeout_task:
-            game.timeout_task.cancel()
-        game.timeout_task = asyncio.create_task(timeout_check())
+        await reset_timeout_timer()  # タイマーリセット関数を使用
         
         log_game_event('game_start', {'difficulty': game.difficulty, 'first_sentence': game.current_sentence})
     else:
@@ -289,6 +294,8 @@ async def handle_game_answer(message):
         # 不正解の処理
         await message.add_reaction(miss_emoji)
         await message.channel.send(f'{message.author.name}さん、間違っています。もう一度試してください。')
+        # 不正解でもタイマーをリセット（追加）
+        await reset_timeout_timer()
 
 async def handle_correct_answer(message):
     """正解時の処理"""
@@ -369,9 +376,7 @@ async def proceed_to_next_question(channel):
     game.start_time = time.time()
     
     # タイムアウトタスクをリセット
-    if game.timeout_task:
-        game.timeout_task.cancel()
-    game.timeout_task = asyncio.create_task(timeout_check())
+    await reset_timeout_timer()  # タイマーリセット関数を使用
     
     log_game_event('next_question', {
         'number': question_num,
