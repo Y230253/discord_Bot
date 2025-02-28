@@ -71,6 +71,7 @@ class GameState:
         self.waiting_for_players = False
         self.waiting_for_difficulty = False
         self.game_logs = []  # ゲームの進行を記録
+        self.last_activity_time = time.time()  # アクティビティタイムスタンプを追加
 
 # ゲーム状態のインスタンス
 game = GameState()
@@ -111,20 +112,37 @@ def log_game_event(event_type, details=None):
 # ==============================
 # タイマーと非同期タスク
 # ==============================
-async def timeout_check():
-    """ゲームのタイムアウトをチェック"""
-    await asyncio.sleep(GAME_TIMEOUT)
-    if game.game_started and game.questions_remaining > 0:
-        game.game_started = False
-        log_game_event('timeout', {'remaining_questions': game.questions_remaining})
-        await client.get_channel(game.channel_id).send('⏰ タイムアウトしました。ゲームを終了します。')
+async def timeout_monitor():
+    """ゲームのタイムアウトを監視する常駐タスク"""
+    while True:
+        try:
+            # 現在ゲーム中かつ最後のアクティビティから設定時間以上経過した場合
+            now = time.time()
+            if game.game_started and (now - game.last_activity_time >= GAME_TIMEOUT):
+                print(f"タイムアウト検出: 最後のアクティビティから{now - game.last_activity_time:.1f}秒経過")
+                game.game_started = False
+                channel = client.get_channel(game.channel_id)
+                if channel:
+                    await channel.send('⏰ タイムアウトしました。ゲームを終了します。')
+                    log_game_event('timeout', {
+                        'remaining_questions': game.questions_remaining,
+                        'elapsed': now - game.last_activity_time
+                    })
+                game.reset()
+        except Exception as e:
+            print(f"タイムアウトモニター エラー: {e}")
+        
+        # 短い間隔で確認（5秒間隔）
+        await asyncio.sleep(5)  
 
-async def reset_timeout_timer():
-    """タイムアウトタイマーをリセット"""
-    if game.timeout_task:
-        game.timeout_task.cancel()
-    game.timeout_task = asyncio.create_task(timeout_check())
-    log_game_event('timer_reset', {'timeout_seconds': GAME_TIMEOUT})
+def reset_timeout_timer():
+    """タイムアウトタイマーをリセット（現在時刻を更新するだけ）"""
+    game.last_activity_time = time.time()
+    log_game_event('timer_reset', {
+        'timeout_at': game.last_activity_time + GAME_TIMEOUT,
+        'current_time': game.last_activity_time
+    })
+    print(f"タイマーリセット: {time.strftime('%H:%M:%S', time.localtime(game.last_activity_time))}")
 
 async def send_in_chunks(channel, text, chunk_size=2000):
     """長いメッセージを分割して送信"""
@@ -149,6 +167,15 @@ async def send_in_chunks(channel, text, chunk_size=2000):
 async def on_ready():
     """Botが起動したときのイベント"""
     print(f'ログインしました: {client.user} (v{BOT_VERSION})')
+    # タイムアウトモニタータスクを起動
+    asyncio.create_task(timeout_monitor())
+    # 起動時のステータス設定（オプション）
+    await client.change_presence(
+        activity=discord.Activity(
+            type=discord.ActivityType.playing, 
+            name="タイピングゲーム | !help"
+        )
+    )
 
 @client.event
 async def on_message(message):
@@ -243,8 +270,8 @@ async def handle_difficulty_selection(message):
         await message.channel.send(f'# お題: {game.current_sentence}')
         game.start_time = time.time()
         
-        # タイムアウトタスクを設定
-        await reset_timeout_timer()  # タイマーリセット関数を使用
+        # タイマーをリセット
+        reset_timeout_timer()
         
         log_game_event('game_start', {'difficulty': game.difficulty, 'first_sentence': game.current_sentence})
     else:
@@ -285,6 +312,9 @@ async def show_rankings(channel):
 
 async def handle_game_answer(message):
     """ゲーム中の回答処理"""
+    # すべての回答でタイマーをリセット
+    reset_timeout_timer()
+    
     if message.content == game.current_sentence and not game.current_question_finished:
         # 正解の処理
         await handle_correct_answer(message)
@@ -294,8 +324,6 @@ async def handle_game_answer(message):
         # 不正解の処理
         await message.add_reaction(miss_emoji)
         await message.channel.send(f'{message.author.name}さん、間違っています。もう一度試してください。')
-        # 不正解でもタイマーをリセット（追加）
-        await reset_timeout_timer()
 
 async def handle_correct_answer(message):
     """正解時の処理"""
@@ -375,8 +403,8 @@ async def proceed_to_next_question(channel):
     
     game.start_time = time.time()
     
-    # タイムアウトタスクをリセット
-    await reset_timeout_timer()  # タイマーリセット関数を使用
+    # タイマーをリセット
+    reset_timeout_timer()
     
     log_game_event('next_question', {
         'number': question_num,
