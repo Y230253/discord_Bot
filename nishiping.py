@@ -34,11 +34,22 @@ miss_emoji = "<:manuox:1102613654643421246>"    # 不正解用の絵文字ID
 def setup_database():
     """データベース接続を設定して返す"""
     try:
-        os.chdir(os.path.dirname(os.path.abspath(__file__)))
-        os.makedirs('typing', exist_ok=True)
-        db_path = "C:\\Users\\2004a\\jikkencho\\typing\\typing_game.db"
+        # スクリプトのディレクトリを基準にする
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        # データベースパスを設定
+        db_path = os.path.join(script_dir, 'typing_game.db')
+        
+        # 接続を確立
         conn = sqlite3.connect(db_path)
         print(f"データベースに接続しました: {db_path}")
+        
+        # データベーステーブルが存在するか確認
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='sentences'")
+        if not cursor.fetchone():
+            print("データベーステーブルが見つかりません。初期化が必要かもしれません。")
+        
         return conn
     except Exception as e:
         print(f"データベース接続エラー: {e}")
@@ -399,7 +410,7 @@ async def proceed_to_next_question(channel):
     
     # 次の問題の案内
     question_num = QUESTIONS_PER_GAME - game.questions_remaining + 1
-    await channel.send(f'# 問題 {question_num}/{QUESTIONS_PER_GAME}\n{game.current_sentence}')
+    await channel.send(f'# 問題 {question_num}/{QUESTIONS_PER_GAME}\n# {game.current_sentence}')
     
     game.start_time = time.time()
     
